@@ -1,17 +1,9 @@
 library(tidyverse)
-devtools::install_github(repo = "lirabenjamin/Ben",force = T)
+# devtools::install_github(repo = "lirabenjamin/Ben",force = T)
 library(Ben)
-theme_ang = function(){
-  theme(legend.position = "bottom",
-        panel.grid = element_blank(),
-        panel.border = element_blank(),
-        panel.background = element_blank(),
-        axis.line = element_line(size = .25))
-}
 
-
-d9 = read.csv("WCI_MBA_data_2019.csv") 
-d0 = read.csv("WCI_MBA_data_2020.csv") 
+d9 = read.csv("data/WCI_MBA_data_2019.csv") 
+d0 = read.csv("data/WCI_MBA_data_2020.csv") 
 
 d = rbind(d9,d0)
 

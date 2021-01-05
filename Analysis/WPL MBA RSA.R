@@ -75,11 +75,22 @@ iccs %>% select(year,Outcome,ICC) %>%
 
 # RSAs ####
 library(RSA)
+ValidIDs = sc %>% 
+  group_by(SubjectID) %>% 
+  mutate(inclself = Relationship %in% c("Self")) %>% 
+  summarise(self = mean(inclself)) %>% 
+  filter(self > 0 & self < 1) %>% 
+  pull(SubjectID)
+
+
 sc %>% 
-  select(SubjectID,Relationship,GritPas_scale,avg_perf) %>% 
-  filter(Relationship == "Self")
-  spread(Relationship,GritPas_scale) 
-RSA::RSA(formula = )
+  select(SubjectID,year,Relationship,GritPas_scale,avg_perf) %>% 
+  filter(SubjectID %in% ValidIDs) %>% 
+  group_by(SubjectID) %>% 
+  mutate(avg_perf_m = mean(avg_perf)) %>% 
+  ungroup() %>% 
+  mutate(rel = case_when(Relationship == "Self"~1,
+                                Relationship != "Self"~0))
 
 
 # Function: Returns mahalanobis distance for each evaluator.

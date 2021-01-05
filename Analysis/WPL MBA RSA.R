@@ -25,30 +25,64 @@ ids = d %>% select(X,SubjectID,EvaluatorID,Relationship,year,class)
 
 ids %>% arrange(X)
 
+# Descriptives ####
 sc$SubjectID %>% unique() %>% length() #623 unique people were evaluated, 739 total, (116 ppl did it twice)
 sc %>% select(SubjectID) %>% group_by(SubjectID) %>% summarise(n=n()) %>% pull(n) %>% table() #8 evals on avg, 1-43
 sc$EvaluatorID %>% unique() %>% length() #3558 unique people were evaluators
 
-sc %>% filter(Relationship =="Self") %>% 
-  mutate(avg_perf = (avg_perf/100)*7+1) %>% 
+# Do people change from year to year? ####
+sc %>% 
+  filter(Relationship =="Self") %>% 
+  mutate(avg_perf = (avg_perf/100)*6+1) %>% 
   select(-SubjectID,-X,-class,-Relationship) %>% 
   gather(varaible,value,-year,-EvaluatorID) %>% 
   ggplot(aes(year,value))+geom_line(aes(group = EvaluatorID))+
   facet_wrap(~varaible)
 
+# Is there variability within? ####
+library(lme4)
+
+data = sc %>% mutate(Value = GritPer_scale)
+withinvar = function(data){
+  lme = lme4::lmer(formula = Value ~ 1 + (1 | SubjectID),data=data) %>% VarCorr() %>% as.data.frame()
+  cov = lme$vcov[2]/(lme$vcov[1]+lme$vcov[2])
+  cor = lme$sdcor[2]/(lme$sdcor[1]+lme$sdcor[2])
+  return(cov)
+}
+
+iccs = bind_rows(sc %>% 
+  select(SubjectID,year,GritPer_scale:avg_perf) %>% 
+  gather(Outcome, Value,-year,-SubjectID) %>% 
+  group_by(Outcome,year) %>% 
+  nest() %>% 
+  mutate(ICC= map_dbl(data,withinvar))
+,
 sc %>% 
-  select(SubjectID,EvaluatorID,Relationship,GritPer_scale,year) %>% 
-  filter(year == 2019) %>% 
-  spread(Relationship,GritPer_scale)
+  select(SubjectID,year,GritPer_scale:avg_perf) %>% 
+  gather(Outcome, Value,-year,-SubjectID) %>% 
+  group_by(Outcome) %>% 
+  nest() %>% 
+  mutate(ICC= map_dbl(data,withinvar),
+         year = 2021))
 
-(sc %>% 
-  select(SubjectID,Relationship,GritPer_scale:avg_perf) %>% 
-  group_by(SubjectID) %>% 
-  nest())[1,2] %>% 
-  unnest(data) -> a 
+iccs %>% select(year,Outcome,ICC) %>% 
+  mutate(year = case_when(year == 2019 ~ "2019",
+                          year == 2020 ~ "2020",
+                          year == 2021 ~ "Both"),
+         ICC = numformat(ICC)) %>% 
+  spread(year,ICC) %>% 
+  write.clip()
 
-a %>% mahal()
-x = a
+# RSAs ####
+library(RSA)
+sc %>% 
+  select(SubjectID,Relationship,GritPas_scale,avg_perf) %>% 
+  filter(Relationship == "Self")
+  spread(Relationship,GritPas_scale) 
+RSA::RSA(formula = )
+
+
+# Function: Returns mahalanobis distance for each evaluator.
 mahal = function(x){
   x = select_if(x,is.numeric)
   m = colMeans(x,na.rm = T)
@@ -57,7 +91,7 @@ mahal = function(x){
   if(det(c)!= 0){d = mahalanobis(x,m,c,tol=1e-40)}
   if(det(c)!= 0){return(d)}
   if(det(c) == 0){return(NA)}
-    }
+}
 
 
 m = sc %>% 

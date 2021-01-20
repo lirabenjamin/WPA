@@ -1,6 +1,8 @@
 library(tidyverse)
 # devtools::install_github(repo = "lirabenjamin/Ben",force = T)
 library(Ben)
+library(magrittr)
+library(psych)
 
 d9 = read.csv("data/WCI_MBA_data_2019.csv") 
 d0 = read.csv("data/WCI_MBA_data_2020.csv") 
@@ -21,6 +23,9 @@ sc = d %>% select(X,SubjectID,EvaluatorID,Relationship,
                   year,
                   class)
 
+#write_rds(sc,"Data/sc.rds")
+
+
 ids = d %>% select(X,SubjectID,EvaluatorID,Relationship,year,class)
 
 ids %>% arrange(EvaluatorID,SubjectID)
@@ -34,6 +39,16 @@ ids %>% arrange(EvaluatorID,SubjectID)
 sc$SubjectID %>% unique() %>% length() #623 unique people were evaluated, 739 total, (116 ppl did it twice)
 sc %>% select(SubjectID) %>% group_by(SubjectID) %>% summarise(n=n()) %>% pull(n) %>% sd() #8.59 (5.35) evals on avg, 1-43
 sc$EvaluatorID %>% unique() %>% length() #3558 unique people were evaluators
+
+# Psychometrics ####
+scale = "RS"
+d %>% 
+  rename_at(vars(Giver_1:Taker_8),function(x){paste0("RS",x)}) %>% 
+  select(starts_with(scale)&!matches("scale")) %>% 
+  #psych::alpha()
+  fa(nfactors = 3,rotate = "promax") %>% 
+  print.psych(digits = 2, cut = .3,sort= T)
+  
 
 # Do people change from year to year? ####
 sc %>% 
@@ -60,6 +75,7 @@ withinvar = function(data){
 }
 
 iccs = bind_rows(sc %>% 
+                   filter(Relationship != "Self") %>% 
   select(SubjectID,year,GritPer_scale:avg_perf) %>% 
   gather(Outcome, Value,-year,-SubjectID) %>% 
   group_by(Outcome,year) %>% 
@@ -67,6 +83,7 @@ iccs = bind_rows(sc %>%
   mutate(ICC= map_dbl(data,withinvar))
 ,
 sc %>% 
+  filter(Relationship != "Self") %>% 
   select(SubjectID,year,GritPer_scale:avg_perf) %>% 
   gather(Outcome, Value,-year,-SubjectID) %>% 
   group_by(Outcome) %>% 
@@ -78,12 +95,13 @@ iccs %>% select(year,Outcome,ICC) %>%
   mutate(year = case_when(year == 2019 ~ "2019",
                           year == 2020 ~ "2020",
                           year == 2021 ~ "Both"),
-         ICC = numformat(ICC)) %>% 
-  spread(year,ICC) %>% 
+         ICC = numformat(1-ICC)) %>% 
+  spread(year,ICC) %T>% 
   write.clip()
 
 # RSAs ####
 library(RSA)
+#Only include people who have at least one self- and one other- rating.
 ValidIDs = sc %>% 
   mutate(idy = paste0(SubjectID,year)) %>% 
   group_by(idy) %>% 
@@ -160,6 +178,7 @@ for (i in 1:16){
   dev.off() 
 }
 
+# Mahalanobis approach ####
 
 # Function: Returns mahalanobis distance for each evaluator.
 mahal = function(x){
@@ -183,14 +202,19 @@ m = sc %>%
 
 m %>% 
   select(SubjectID,Relationship,m,avg_perf) %>% 
-  filter(m > 0) %>% 
+  filter(m > 0) %>%  
   group_by(SubjectID) %>% 
   summarise(m = m[Relationship=="Self"],
-            avg_perf = mean(avg_perf)) %>% 
+            avg_perf = mean(avg_perf[Relationship!="Self"])) %>% 
   ungroup() %>% 
   ggplot(aes(m,avg_perf))+
   geom_point(aes(col = m>qchisq(.05,8)))+
   geom_smooth(method = "lm")+
   theme_ang() +
-  coord_cartesian(xlim = c(0,100))
+  coord_cartesian(xlim = c(0,100))+
+  labs(y = "Average performance",
+       x = "Mahalanobis distance of self-evaluation",
+       col = "Is the distance significant (p < .05)",
+       title ="Mahalnobis distance of self-evaluations\ndo not predict performance",
+       subtitle = "r = .06 ns")
   

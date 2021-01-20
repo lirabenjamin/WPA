@@ -75,7 +75,7 @@ withinvar = function(data){
 }
 
 iccs = bind_rows(sc %>% 
-                   filter(Relationship != "Self") %>% 
+                   filter(Relationship != "Self") %>% # comment this line to include the self in ICCs
   select(SubjectID,year,GritPer_scale:avg_perf) %>% 
   gather(Outcome, Value,-year,-SubjectID) %>% 
   group_by(Outcome,year) %>% 
@@ -83,7 +83,7 @@ iccs = bind_rows(sc %>%
   mutate(ICC= map_dbl(data,withinvar))
 ,
 sc %>% 
-  filter(Relationship != "Self") %>% 
+  filter(Relationship != "Self") %>% # comment this line to include the self in ICCs
   select(SubjectID,year,GritPer_scale:avg_perf) %>% 
   gather(Outcome, Value,-year,-SubjectID) %>% 
   group_by(Outcome) %>% 
@@ -99,6 +99,55 @@ iccs %>% select(year,Outcome,ICC) %>%
   spread(year,ICC) %T>% 
   write.clip()
 
+# Using the psych::ICC
+iccsp = sc %>% 
+  filter(Relationship != "Self") %>% 
+  select(SubjectID,EvaluatorID,year,GritPer_scale:avg_perf) %>% 
+  gather(Outcome, Value,-year,-SubjectID,-EvaluatorID) %>% 
+  group_by(Outcome,year) %>% 
+  nest() %>% 
+  mutate(data = map(data,spread,EvaluatorID,Value),
+         data = map(data,select,-1)) %>% 
+  mutate(iccs = map(data,ICC),
+         iccs = map(iccs,"results"),
+         iccs = map(iccs, select, type,ICC),
+         iccs = map(iccs, spread,type,ICC))
+
+
+
+# Comparing manual vs. psych()
+right_join(iccsp %>% unnest(iccs) %>% select(-data),
+iccs %>% mutate(ICC = 1 - ICC) %>% select(-data))
+
+iccsp %>% unnest(iccs) %>%  select(year,Outcome,ICC1,ICC1k) %>% 
+  mutate(icc = paste(numformat(ICC1),paste0("(",numformat(ICC1k),")"))) %>% 
+  select(year,Outcome,icc) %>% 
+  spread(year,icc) %>% 
+  separate(`2019`, c("ICC1","ICC1k"),sep = " ") %>% 
+  separate(`2020`, c("ICC1 ","ICC1k "),sep = " ")
+  write.clip
+
+for(i in 1:10){
+sc %>% 
+  filter(Relationship != "Self") %>% 
+  select(SubjectID,GritPer_scale:avg_perf) %>% 
+  group_by(SubjectID) %>% 
+  nest() %>% 
+  ungroup() %>% 
+  slice_sample(n = 15) %>% 
+  unnest(data) %>% 
+  gather(Variable,Value,-SubjectID) %>% 
+  ggplot(aes(SubjectID,Value))+
+  geom_point(alpha = .3)+
+  stat_summary(fun = "mean",geom = "point",shape = "-",size = 10,col= "Red")+
+  facet_wrap(~Variable,scales = "free_y",nrow = 2)+
+  theme_ang()+
+  theme(axis.text.x = element_blank(),panel.grid.major.x = element_line(colour = "gray",size = .1))
+ggsave(paste0("Plots/ICC/",i,".pdf"),width = 10,height = 5)
+}
+system("convert -delay 180 -density 500 Plots/ICC/*.pdf example_1.gif")
+
+
 # RSAs ####
 library(RSA)
 #Only include people who have at least one self- and one other- rating.
@@ -111,31 +160,31 @@ ValidIDs = sc %>%
   pull(idy)
 
 
-# rsas = sc %>% 
-#   mutate(idy = paste0(SubjectID,year)) %>% 
-#   filter(idy %in% ValidIDs) %>% 
-#   select(-X) %>% 
-#   group_by(SubjectID) %>% 
-#   mutate(p = mean(avg_perf)) %>% 
-#   gather(Variable,o,-SubjectID,-EvaluatorID,-Relationship,-p,-class,-year,-idy) %>% 
-#   group_by(idy,Variable) %>% 
-#   mutate(s = o[Relationship == "Self"]) %>% 
-#   filter(Relationship != "Self") %>% 
-#   group_by(Variable,year) %>% 
-#   mutate(Relationship = as.factor(Relationship),
-#          year = factor(year),
-#          class = factor(class),
-#          o = scale(o),
-#          s = scale(s),
-#          p = scale(p)) %>% 
-#   nest() %>% 
-#   mutate(rsa = map(data,function(x){RSA(formula = p~o*s+Relationship+class, data = x)}))
+rsas = sc %>%
+  mutate(idy = paste0(SubjectID,year)) %>%
+  filter(idy %in% ValidIDs) %>%
+  select(-X) %>%
+  group_by(SubjectID) %>%
+  mutate(p = mean(avg_perf[Relationship != "Self"])) %>%
+  gather(Variable,o,-SubjectID,-EvaluatorID,-Relationship,-p,-class,-year,-idy) %>%
+  group_by(idy,Variable) %>%
+  mutate(s = o[Relationship == "Self"]) %>%
+  filter(Relationship != "Self") %>%
+  group_by(Variable,year) %>%
+  mutate(Relationship = as.factor(Relationship),
+         year = factor(year),
+         class = factor(class),
+         o = scale(o),
+         s = scale(s),
+         p = scale(p)) %>%
+  nest() %>%
+  mutate(rsa = map(data,function(x){RSA(formula = p~o*s,control.variables = "Relationship", data = x)}))
 
 # write_rds(rsas,"Output/rsas.rds")
 rsas = read_rds("Output/rsas.rds")
 
 extract = function(x){
-  rsas$rsa[[1]]$models$full %>% parameterestimates(standardized = T) %>% 
+  rsas$rsa$models$full %>% parameterestimates(standardized = T) %>% 
     mutate(beta = formatest(std.all,pvalue)) %>% 
     select(label,std.all,pvalue,beta) %>% 
     filter(str_detect(label,"a")|str_detect(label,"b"))

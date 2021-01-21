@@ -40,6 +40,20 @@ sc$SubjectID %>% unique() %>% length() #623 unique people were evaluated, 739 to
 sc %>% select(SubjectID) %>% group_by(SubjectID) %>% summarise(n=n()) %>% pull(n) %>% sd() #8.59 (5.35) evals on avg, 1-43
 sc$EvaluatorID %>% unique() %>% length() #3558 unique people were evaluators
 
+sc %>% 
+  filter(Relationship !="Self") %>% 
+  group_by(year,SubjectID) %>% 
+  summarise(n = n()) %>% 
+  ungroup() %>% 
+  ggplot(aes(n))+geom_histogram(bins = 20)+facet_wrap(~year)+theme_ang()
+
+sc %>% 
+  filter(Relationship !="Self") %>% 
+  group_by(year,SubjectID) %>% 
+  summarise(n = n()) %>% 
+  filter(year==2020) %>% 
+  pull(n) %>% quantile(.75)
+
 # Psychometrics ####
 scale = "RS"
 d %>% 
@@ -103,7 +117,13 @@ iccs %>% select(year,Outcome,ICC) %>%
 iccsp = sc %>% 
   filter(Relationship != "Self") %>% 
   select(SubjectID,EvaluatorID,year,GritPer_scale:avg_perf) %>% 
+  group_by(SubjectID) %>% 
+  slice_sample(n = 2) %>% # Comment out to keep all judges. Run this line to limit to select 8 random judges
   gather(Outcome, Value,-year,-SubjectID,-EvaluatorID) %>% 
+  #
+  group_by(SubjectID,Outcome,year) %>% 
+  mutate(EvaluatorID = 1:n()) %>% 
+  #
   group_by(Outcome,year) %>% 
   nest() %>% 
   mutate(data = map(data,spread,EvaluatorID,Value),
@@ -114,6 +134,7 @@ iccsp = sc %>%
          iccs = map(iccs, spread,type,ICC))
 
 iccsp$data[[1]] %>% head
+iccsp$data[[10]] %>% ICC
 
 
 
@@ -122,15 +143,15 @@ right_join(iccsp %>% unnest(iccs) %>% select(-data),
 iccs %>% mutate(ICC = 1 - ICC) %>% select(-data))
 
 iccsp %>% unnest(iccs) %>%  select(year,Outcome,ICC1,ICC1k) %>% 
-  mutate(icc = paste(numformat(ICC1),paste0("(",numformat(ICC1k),")"))) %>% 
+  mutate(icc = paste(numformat(ICC1),numformat(ICC1k))) %>% 
   select(year,Outcome,icc) %>% 
   spread(year,icc) %>% 
   separate(`2019`, c("ICC1","ICC1k"),sep = " ") %>% 
-  separate(`2020`, c("ICC1 ","ICC1k "),sep = " ")
-  write.clip
+  separate(`2020`, c("ICC1 ","ICC1k "),sep = " ") %T>% 
+  write.clip()
 
   
-# Plot ICCs  
+  # Plot ICCs  
 for(i in 1:10){
 sc %>% 
   filter(Relationship != "Self") %>% 

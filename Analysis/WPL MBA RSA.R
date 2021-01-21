@@ -113,6 +113,8 @@ iccsp = sc %>%
          iccs = map(iccs, select, type,ICC),
          iccs = map(iccs, spread,type,ICC))
 
+iccsp$data[[1]] %>% head
+
 
 
 # Comparing manual vs. psych()
@@ -127,6 +129,8 @@ iccsp %>% unnest(iccs) %>%  select(year,Outcome,ICC1,ICC1k) %>%
   separate(`2020`, c("ICC1 ","ICC1k "),sep = " ")
   write.clip
 
+  
+# Plot ICCs  
 for(i in 1:10){
 sc %>% 
   filter(Relationship != "Self") %>% 
@@ -145,7 +149,7 @@ sc %>%
   theme(axis.text.x = element_blank(),panel.grid.major.x = element_line(colour = "gray",size = .1))
 ggsave(paste0("Plots/ICC/",i,".pdf"),width = 10,height = 5)
 }
-system("convert -delay 180 -density 500 Plots/ICC/*.pdf example_1.gif")
+#system("convert -delay 180 -density 500 Plots/ICC/*.pdf example_1.gif")
 
 
 # RSAs ####
@@ -159,38 +163,65 @@ ValidIDs = sc %>%
   filter(self > 0 & self < 1) %>% 
   pull(idy)
 
+#Outcome = Mean rating from all judges
+# rsas = sc %>%
+#   mutate(idy = paste0(SubjectID,year)) %>%
+#   filter(idy %in% ValidIDs) %>%
+#   select(-X) %>%
+#   group_by(SubjectID) %>%
+#   mutate(p = mean(avg_perf[Relationship != "Self"])) %>%
+#   gather(Variable,o,-SubjectID,-EvaluatorID,-Relationship,-p,-class,-year,-idy) %>%
+#   group_by(idy,Variable) %>%
+#   mutate(s = o[Relationship == "Self"]) %>%
+#   filter(Relationship != "Self") %>%
+#   group_by(Variable,year) %>%
+#   mutate(Relationship = as.factor(Relationship),
+#          year = factor(year),
+#          class = factor(class),
+#          o = scale(o),
+#          s = scale(s),
+#          p = scale(p)) %>%
+#   nest() %>%
+#   mutate(rsa = map(data,function(x){RSA(formula = p~o*s,control.variables = "Relationship", data = x)}))
+# write_rds(rsas,"Output/rsas_mean.rds")
 
-rsas = sc %>%
-  mutate(idy = paste0(SubjectID,year)) %>%
-  filter(idy %in% ValidIDs) %>%
-  select(-X) %>%
-  group_by(SubjectID) %>%
-  mutate(p = mean(avg_perf[Relationship != "Self"])) %>%
-  gather(Variable,o,-SubjectID,-EvaluatorID,-Relationship,-p,-class,-year,-idy) %>%
-  group_by(idy,Variable) %>%
-  mutate(s = o[Relationship == "Self"]) %>%
-  filter(Relationship != "Self") %>%
-  group_by(Variable,year) %>%
-  mutate(Relationship = as.factor(Relationship),
-         year = factor(year),
-         class = factor(class),
-         o = scale(o),
-         s = scale(s),
-         p = scale(p)) %>%
-  nest() %>%
-  mutate(rsa = map(data,function(x){RSA(formula = p~o*s,control.variables = "Relationship", data = x)}))
+#Outcome = Individual rating from that specific judge
+# rsas = sc %>%
+#   mutate(idy = paste0(SubjectID,year)) %>%
+#   filter(idy %in% ValidIDs) %>%
+#   select(-X) %>%
+#   group_by(SubjectID) %>%
+#   gather(Variable,o,-SubjectID,-EvaluatorID,-Relationship,-avg_perf,-class,-year,-idy) %>%
+#   rename(p = avg_perf) %>% 
+#   group_by(idy,Variable) %>%
+#   mutate(s = o[Relationship == "Self"]) %>%
+#   filter(Relationship != "Self") %>%
+#   group_by(Variable,year) %>%
+#   mutate(Relationship = as.factor(Relationship),
+#          year = factor(year),
+#          class = factor(class),
+#          o = scale(o),
+#          s = scale(s),
+#          p = scale(p)) %>%
+#   nest() %>%
+#   mutate(rsa = map(data,function(x){RSA(formula = p~o*s,control.variables = "Relationship", data = x)}))
+# 
+# write_rds(rsas,"Output/rsas_judgei.rds")
 
-# write_rds(rsas,"Output/rsas.rds")
-rsas = read_rds("Output/rsas.rds")
+
+#rsas = read_rds("Output/rsas.rds")
+rsas = read_rds("Output/rsas_judgei.rds")
 
 extract = function(x){
-  rsas$rsa$models$full %>% parameterestimates(standardized = T) %>% 
+  x$models$full %>% parameterestimates(standardized = T) %>% 
     mutate(beta = formatest(std.all,pvalue)) %>% 
     select(label,std.all,pvalue,beta) %>% 
     filter(str_detect(label,"a")|str_detect(label,"b"))
 }
 
 rsaparams = rsas %>% 
+  rowwise() %>% 
+  ungroup() %>% 
   mutate(params = map(rsa,extract),
          r2 = map_dbl(rsa,"r.squared")) %>% 
   unnest(params) %>% 
@@ -199,7 +230,7 @@ rsaparams = rsas %>%
   select(-a5)
 colnames(rsaparams)[4:12] = c("SLC","CLC","SLI","CLI","self","other","self2","interaction",'other2')
 rsaparams[c(1:9,11,10,12)] %>% 
-  mutate(r2 = numformat(r2)) %>% 
+  mutate(r2 = numformat(r2)) %T>% 
   write.clip()
 
 rsas$rsa[[9]] %>% plot()

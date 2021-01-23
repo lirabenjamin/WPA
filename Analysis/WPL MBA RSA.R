@@ -52,7 +52,7 @@ sc %>%
   group_by(year,SubjectID) %>% 
   summarise(n = n()) %>% 
   filter(year==2020) %>% 
-  pull(n) %>% quantile(.75)
+  pull(n) %>% max()
 
 # Psychometrics ####
 scale = "RS"
@@ -254,12 +254,12 @@ rsaparams[c(1:9,11,10,12)] %>%
   mutate(r2 = numformat(r2)) %T>% 
   write.clip()
 
-rsas$rsa[[9]] %>% plot()
 
-plots = rsas %>% mutate(plot = map2(rsa,paste(Variable,as.character(year)),function(x,y){plot(x,
+
+  plots = rsas %>% mutate(plot = map(rsa,paste(Variable),function(x){plot(x,
                                                                     xlab = "Self", #Title
                                                       ylab = "Other",
-                                                      zlab = Variable,
+                                                      zlab = "Performance",
                                                       type = "3d",         #For those who have difficulty interpreting 3-d figures try "interactive" which will let you rotate the figure
                                                       surface = "predict", #Response surface is based on predicted values of outcome
                                                       rotation = list(x = -63, y = 32, z = 15),
@@ -272,9 +272,24 @@ plots = rsas %>% mutate(plot = map2(rsa,paste(Variable,as.character(year)),funct
                                                       points = FALSE)})) %>% 
   select(year,Variable,plot)
 
+  
+  plot(rsas$rsa[[1]],
+       xlab = "Self", #Title
+       ylab = "Other",
+       zlab = "Performance",
+       type = "3d",         #For those who have difficulty interpreting 3-d figures try "interactive" which will let you rotate the figure
+       surface = "predict", #Response surface is based on predicted values of outcome
+       rotation = list(x = -63, y = 32, z = 15),
+       legend  = FALSE,     #TRUE displays color legend
+       param   = FALSE,      #Display RSA parameters
+       coefs   = FALSE,      #Display polynomial coefficients 
+       axes    = c("LOC", "LOIC"), #Display line of congruence and line of incongruence
+       project = NULL,      #TRUE displays projections onto the bottom of the plot
+       hull    = FALSE,     #TRUE displays a bag plot on the surface
+       points = FALSE)
 
-for (i in 1:16){
-  png(paste0("Plots/",i,"RSA.png"), res = 500,height = 1500,width = 1500) 
+  for (i in 1:16){
+  png(paste0("Plots/RSA2/",i,"RSA.png"), res = 500,height = 1500,width = 1500) 
   print(plots$plot[[i]])
   dev.off() 
 }
@@ -318,4 +333,72 @@ m %>%
        col = "Is the distance significant (p < .05)",
        title ="Mahalnobis distance of self-evaluations\ndo not predict performance",
        subtitle = "r = .06 ns")
+  
+
+# Appendix ####
+#Manual calc from internet
+#https://stackoverflow.com/questions/3205176/iccs-when-the-number-of-judges-is-not-constant
+
+library(lme4)
+
+# calculate the hierarchical model
+m1 = lmer(GritPas_scale ~ (1|SubjectID) + (1|EvaluatorID), data=sc %>% filter(year == 2020))
+print(m1)
+
+# helper function to pull out the variances
+xVars <- function(m1) {
+  exvars = lme4::VarCorr(m1)
+  vars = c(exvars$SubjectID[1,1], exvars$EvaluatorID[1,1], attr(exvars,"sc")^2) 
+  names(vars) <- c('person var', 'judge var', 'residual var')
+  vars
+}
+# helper function for ICC(k) variations
+icck <- function(variances, k=1) {
+  icc = numeric()
+  for (i in 1:k){
+    icc = append(icc,variances[1] / (variances[1] + (variances[2] + variances[3]) / i))
+  }
+  
+  names(icc) = 1:k
+  enframe(icc) %>% return
+}
+
+iccplot = sc %>% 
+  select(SubjectID,EvaluatorID,year,GritPer_scale:avg_perf) %>% 
+  gather(Variable,Value,-SubjectID,-EvaluatorID,-year) %>% 
+  group_by(year,Variable) %>% 
+  nest() %>% 
+  mutate(lmer = map2(data,year,function(x,y){lmer(Value ~ (1|SubjectID) + (1|EvaluatorID), data=x %>% filter(year == y))}),
+         varcomp = map(lmer,xVars),
+         k = ifelse(year == 2019 , 19,23),
+         icck = map2(varcomp,k,function(x,y){icck(x,y)})) %>% 
+  unnest(icck) %>%
+  select(year,Variable,name,value) %>% 
+  mutate(name = as.numeric(name)) %>% 
+  ggplot(aes(name,value,color=Variable))+
+  geom_line(aes(group = Variable))+
+  scale_color_brewer(palette = "Set1")+
+  facet_wrap(~year)+
+  theme_ang()+
+  geom_text(col = "black",data = . %>% filter(name %in% c(1,8,max(name))),size = 2,vjust = .1,aes(label = numformat(value)))
+ggsave(iccplot,filename = "Plots/ICC/Vark.pdf",width = 7,height = 5)
+
+
+# the output you want
+icc = numeric()
+for (i in 1:23){icc = icck(xVars(m1), i) %>% append(icc,.)}
+p = icc %>% 
+  enframe() %>% 
+  mutate(name = str_remove(name,"ICC") %>% as.numeric()) %>% 
+  select(k = name,
+         icc = value) %>% 
+  ggplot(aes(k,icc))+
+  geom_line(aes(group = 1))+
+  theme_ang()+
+  geom_hline(yintercept = 1,size = .1)+
+  coord_cartesian(ylim = c(0,1.05))+
+  labs(title = "As the number of judges increases, ICC aproximates 1",
+       subtitle = "Ratings for Grit Passion in 2020\nICC = 1.00 rounded to two decimals when k = 844")
+
+ggsave(p,filename = "Plots/ICC/k.pdf",width = 5,height = 4)
   

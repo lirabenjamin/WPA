@@ -1,8 +1,9 @@
 library(tidyverse)
-# devtools::install_github(repo = "lirabenjamin/Ben",force = T)
+#devtools::install_github(repo = "lirabenjamin/Ben",force = T)
 library(Ben)
 library(magrittr)
 library(psych)
+
 
 d9 = read.csv("data/WCI_MBA_data_2019.csv") 
 d0 = read.csv("data/WCI_MBA_data_2020.csv") 
@@ -51,7 +52,7 @@ sc %>%
   filter(Relationship !="Self") %>% 
   group_by(year,SubjectID) %>% 
   summarise(n = n()) %>% 
-  filter(year==2020) %>% 
+  filter(year==2019) %>% 
   pull(n) %>% max()
 
 # Psychometrics ####
@@ -64,7 +65,7 @@ d %>%
   print.psych(digits = 2, cut = .3,sort= T)
   
 
-# Do people change from year to year? ####
+# Do people's self reports change from year to year? ####
 sc %>% 
   filter(Relationship =="Self") %>% 
   mutate(avg_perf = (avg_perf/100)*6+1) %>% 
@@ -87,6 +88,8 @@ withinvar = function(data){
   cor = lme$sdcor[2]/(lme$sdcor[1]+lme$sdcor[2])
   return(cov)
 }
+
+
 
 iccs = bind_rows(sc %>% 
                    filter(Relationship != "Self") %>% # comment this line to include the self in ICCs
@@ -118,7 +121,7 @@ iccsp = sc %>%
   filter(Relationship != "Self") %>% 
   select(SubjectID,EvaluatorID,year,GritPer_scale:avg_perf) %>% 
   group_by(SubjectID) %>% 
-  slice_sample(n = 2) %>% # Comment out to keep all judges. Run this line to limit to select 8 random judges
+  #slice_sample(n = 2) %>% # Comment out to keep all judges. Run this line to limit to select 8 random judges
   gather(Outcome, Value,-year,-SubjectID,-EvaluatorID) %>% 
   #
   group_by(SubjectID,Outcome,year) %>% 
